@@ -15,12 +15,14 @@ import {
 // --- Firebase 配置 ---
 // 注意：在實際部署時，請將此處替換為您的 Vercel 環境變數或實際 Config
 const firebaseConfig = window.VITE_FIREBASE_CONFIG ? JSON.parse(window.VITE_FIREBASE_CONFIG) : {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  const firebaseConfig = {
+  apiKey: "AIzaSyAYm_63S9pKMZ51Qb2ZlCHRsfuGzy2gstw",
+  authDomain: "squashreact.firebaseapp.com",
+  projectId: "squashreact",
+  storageBucket: "squashreact.firebasestorage.app",
+  messagingSenderId: "342733564194",
+  appId: "1:342733564194:web:7345d90d7d22c0b605dd7b",
+  measurementId: "G-JRZ0QSFLLQ"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -591,3 +593,4 @@ function BudgetModule() {
     </div>
   );
 }
+

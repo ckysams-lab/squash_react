@@ -1,0 +1,353 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Users, Calendar, Trophy, Award, Megaphone, 
+  BarChart3, Settings, LogOut, ChevronRight, 
+  CheckCircle2, XCircle, UserCircle, Save,
+  Plus, Trash2, Download
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, collection, doc, setDoc, getDoc, 
+  onSnapshot, query, deleteDoc 
+} from 'firebase/firestore';
+import { 
+  getAuth, signInAnonymously, onAuthStateChanged, 
+  signInWithCustomToken 
+} from 'firebase/auth';
+
+// --- Firebase 配置 (請根據實際情況替換) ---
+const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'squash-management-v1';
+
+// --- 香港壁球總會章別獎勵設定 ---
+const BADGE_AWARDS = {
+  "白金章": { points: 400, icon: "💎", color: "text-blue-500" },
+  "金章": { points: 200, icon: "🥇", color: "text-yellow-500" },
+  "銀章": { points: 100, icon: "🥈", color: "text-gray-400" },
+  "銅章": { points: 50, icon: "🥉", color: "text-amber-600" },
+  "無": { points: 0, icon: "", color: "" }
+};
+
+const App = () => {
+  const [user, setUser] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [currentMenu, setCurrentMenu] = useState('dashboard');
+  const [loading, setLoading] = useState(true);
+
+  // 數據狀態
+  const [rankings, setRankings] = useState([]);
+  const [schedules, setSchedules] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [awards, setAwards] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+
+  // --- 認證處理 ---
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
+          await signInWithCustomToken(auth, window.__initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Auth error:", err);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // --- 數據監聽 ---
+  useEffect(() => {
+    if (!user) return;
+
+    const qRankings = query(collection(db, 'artifacts', appId, 'public', 'data', 'rankings'));
+    const unsubRank = onSnapshot(qRankings, (snapshot) => {
+      setRankings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => console.error(err));
+
+    const qAnnounce = query(collection(db, 'artifacts', appId, 'public', 'data', 'announcements'));
+    const unsubAnn = onSnapshot(qAnnounce, (snapshot) => {
+      setAnnouncements(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => new Date(b.date) - new Date(a.date)));
+    });
+
+    const qSchedules = query(collection(db, 'artifacts', appId, 'public', 'data', 'schedules'));
+    const unsubSched = onSnapshot(qSchedules, (snapshot) => {
+      setSchedules(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    const qAwards = query(collection(db, 'artifacts', appId, 'public', 'data', 'student_awards'));
+    const unsubAwards = onSnapshot(qAwards, (snapshot) => {
+      setAwards(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    return () => {
+      unsubRank();
+      unsubAnn();
+      unsubSched();
+      unsubAwards();
+    };
+  }, [user]);
+
+  // --- 登入邏輯 ---
+  const handleLogin = (id, pwd) => {
+    if (pwd === "8888") {
+      setIsAdmin(true);
+      setUser({ uid: 'ADMIN', displayName: '管理員' });
+    } else {
+      setIsAdmin(false);
+      setUser({ uid: id, displayName: id });
+    }
+  };
+
+  if (loading) return <div className="flex h-screen items-center justify-center">加載中...</div>;
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+      {/* 頂部導航 */}
+      <nav className="bg-blue-700 text-white shadow-md sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="bg-white p-1.5 rounded-lg">
+              <Trophy className="text-blue-700 w-6 h-6" />
+            </div>
+            <h1 className="text-xl font-bold tracking-tight">正覺壁球管理系統</h1>
+          </div>
+          <div className="flex items-center gap-4 text-sm font-medium">
+            <div className="hidden md:block bg-blue-800 px-3 py-1 rounded-full border border-blue-600">
+              {isAdmin ? "🛡️ 管理員模式" : `👤 學生: ${user?.uid}`}
+            </div>
+            <button 
+              onClick={() => { setUser(null); setIsAdmin(false); }}
+              className="p-2 hover:bg-blue-600 rounded-lg transition"
+            >
+              <LogOut size={20} />
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      <div className="max-w-7xl mx-auto px-4 py-8 flex flex-col md:flex-row gap-8">
+        {/* 側邊菜單 */}
+        <aside className="w-full md:w-64 shrink-0">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-1">
+            <MenuButton active={currentMenu === 'dashboard'} icon={<Calendar />} label="訓練日程表" onClick={() => setCurrentMenu('dashboard')} />
+            <MenuButton active={currentMenu === 'rankings'} icon={<Trophy />} label="隊員排行榜" onClick={() => setCurrentMenu('rankings')} />
+            <MenuButton active={currentMenu === 'attendance'} icon={<Users />} label="考勤點名" onClick={() => setCurrentMenu('attendance')} />
+            <MenuButton active={currentMenu === 'awards'} icon={<Award />} label="榮譽榜單" onClick={() => setCurrentMenu('awards')} />
+            <MenuButton active={currentMenu === 'news'} icon={<Megaphone />} label="活動公告" onClick={() => setCurrentMenu('news')} />
+            {isAdmin && (
+              <MenuButton active={currentMenu === 'budget'} icon={<BarChart3 />} label="預算核算" onClick={() => setCurrentMenu('budget')} />
+            )}
+          </div>
+        </aside>
+
+        {/* 主內容區 */}
+        <main className="flex-1 space-y-6">
+          {currentMenu === 'dashboard' && <ScheduleView schedules={schedules} isAdmin={isAdmin} />}
+          {currentMenu === 'rankings' && <RankingView rankings={rankings} isAdmin={isAdmin} />}
+          {currentMenu === 'attendance' && <AttendanceView schedules={schedules} isAdmin={isAdmin} />}
+          {currentMenu === 'awards' && <AwardsView awards={awards} isAdmin={isAdmin} />}
+          {currentMenu === 'news' && <NewsView announcements={announcements} isAdmin={isAdmin} />}
+          {currentMenu === 'budget' && <BudgetView isAdmin={isAdmin} />}
+        </main>
+      </div>
+    </div>
+  );
+};
+
+// --- 組件: 菜單按鈕 ---
+const MenuButton = ({ active, icon, label, onClick }) => (
+  <button 
+    onClick={onClick}
+    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+      active 
+        ? 'bg-blue-600 text-white shadow-md translate-x-1' 
+        : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
+    }`}
+  >
+    {React.cloneElement(icon, { size: 20 })}
+    <span className="font-semibold">{label}</span>
+  </button>
+);
+
+// --- 視圖: 訓練日程 ---
+const ScheduleView = ({ schedules, isAdmin }) => (
+  <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+    <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+      <h2 className="text-2xl font-bold flex items-center gap-2">
+        <Calendar className="text-blue-600" /> 訓練日程
+      </h2>
+      {isAdmin && (
+        <button className="text-sm bg-blue-50 text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-100 font-semibold transition">
+          匯入 Excel
+        </button>
+      )}
+    </div>
+    <div className="overflow-x-auto">
+      <table className="w-full text-left">
+        <thead>
+          <tr className="bg-slate-50 text-slate-500 text-sm uppercase">
+            <th className="px-6 py-4">班級</th>
+            <th className="px-6 py-4">地點</th>
+            <th className="px-6 py-4">時間</th>
+            <th className="px-6 py-4">詳情</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {schedules.map(s => (
+            <tr key={s.id} className="hover:bg-slate-50/50">
+              <td className="px-6 py-4 font-bold text-blue-900">{s.班級}</td>
+              <td className="px-6 py-4">{s.地點}</td>
+              <td className="px-6 py-4">{s.時間}</td>
+              <td className="px-6 py-4 text-slate-500 text-xs">{s.具體日期?.substring(0, 30)}...</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </section>
+);
+
+// --- 視圖: 排行榜 ---
+const RankingView = ({ rankings, isAdmin }) => {
+  const sorted = [...rankings].sort((a, b) => b.積分 - a.積分);
+
+  return (
+    <section className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {sorted.slice(0, 3).map((player, idx) => (
+          <div key={player.id} className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-20">
+               {idx === 0 ? <Trophy size={60} /> : <Award size={60} />}
+            </div>
+            <div className="text-xs font-bold bg-white/20 w-fit px-2 py-0.5 rounded mb-2">第 {idx + 1} 名</div>
+            <div className="text-2xl font-bold">{player.姓名}</div>
+            <div className="text-blue-100">{player.班級}</div>
+            <div className="mt-4 text-3xl font-black">{player.積分} <span className="text-sm font-normal">pts</span></div>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="bg-slate-50 text-slate-500 text-sm">
+              <th className="px-6 py-4">排名</th>
+              <th className="px-6 py-4">隊員</th>
+              <th className="px-6 py-4">積分</th>
+              <th className="px-6 py-4">榮譽</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {sorted.map((p, idx) => (
+              <tr key={p.id} className="hover:bg-slate-50">
+                <td className="px-6 py-4 font-mono text-slate-400">#{idx + 1}</td>
+                <td className="px-6 py-4 font-semibold">{p.姓名} <span className="text-xs font-normal text-slate-400">({p.班級})</span></td>
+                <td className="px-6 py-4 text-blue-600 font-bold">{p.積分}</td>
+                <td className="px-6 py-4">
+                  {p.章別 !== "無" && (
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-slate-100 ${BADGE_AWARDS[p.章別]?.color}`}>
+                      {BADGE_AWARDS[p.章別]?.icon} {p.章別}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+};
+
+// --- 視圖: 考勤 (簡化版邏輯) ---
+const AttendanceView = ({ schedules, isAdmin }) => (
+  <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+    <div className="flex items-center justify-between mb-8">
+      <h2 className="text-2xl font-bold flex items-center gap-2"><Users className="text-blue-600" /> 考勤管理</h2>
+      <button className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold shadow-lg shadow-blue-200">
+        開始今日點名
+      </button>
+    </div>
+    <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
+      <p className="text-blue-800 text-sm font-medium mb-4">請先從左側選擇班級或上傳名單...</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {schedules.map(s => (
+          <div key={s.id} className="bg-white p-4 rounded-xl shadow-sm flex items-center justify-between group cursor-pointer hover:ring-2 ring-blue-500 transition">
+            <span className="font-bold">{s.班級}</span>
+            <ChevronRight className="text-slate-300 group-hover:text-blue-500" />
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+);
+
+// --- 視圖: 榮譽榜單 ---
+const AwardsView = ({ awards }) => (
+  <div className="grid grid-cols-1 gap-6">
+    {awards.map(a => (
+      <div key={a.id} className="bg-white p-6 rounded-2xl shadow-sm border-l-8 border-blue-600 relative">
+        <div className="absolute top-6 right-6 text-blue-100"><Award size={48} /></div>
+        <div className="text-xs text-blue-500 font-black uppercase tracking-widest mb-1">{a.日期}</div>
+        <h3 className="text-xl font-bold text-slate-800 mb-2">🏆 {a.獎項}</h3>
+        <p className="text-slate-600"><b>比賽：</b>{a.比賽名稱}</p>
+        <p className="text-lg font-bold text-blue-900 mt-2">{a.學生姓名} <span className="text-sm font-normal text-slate-400">獲得</span></p>
+      </div>
+    ))}
+  </div>
+);
+
+// --- 視圖: 公告 ---
+const NewsView = ({ announcements }) => (
+  <div className="space-y-4">
+    {announcements.map(n => (
+      <div key={n.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded">重要</span>
+          <span className="text-slate-400 text-xs">{n.日期}</span>
+        </div>
+        <h3 className="text-lg font-bold mb-2">{n.標題}</h3>
+        <p className="text-slate-600 text-sm leading-relaxed">{n.內容}</p>
+      </div>
+    ))}
+  </div>
+);
+
+// --- 視圖: 財務預算 ---
+const BudgetView = () => (
+  <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+    <h2 className="text-2xl font-bold mb-6 flex items-center gap-2 text-blue-900"><BarChart3 /> 財務損益平衡預測</h2>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="space-y-6">
+        <div>
+          <label className="block text-sm font-bold text-slate-500 mb-2">預計本期學生總人數</label>
+          <input type="number" className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl focus:ring-2 ring-blue-500 outline-none" defaultValue={50} />
+        </div>
+        <div>
+          <label className="block text-sm font-bold text-slate-500 mb-2">每位學費金額 (HK$)</label>
+          <input type="number" className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl focus:ring-2 ring-blue-500 outline-none" defaultValue={250} />
+        </div>
+      </div>
+      <div className="bg-blue-900 rounded-3xl p-8 text-white flex flex-col justify-center">
+        <div className="text-blue-300 text-sm font-bold mb-2 uppercase tracking-widest">預計總利潤</div>
+        <div className="text-5xl font-black mb-4">$3,500</div>
+        <div className="h-2 w-full bg-blue-800 rounded-full overflow-hidden">
+          <div className="h-full bg-green-400 w-3/4"></div>
+        </div>
+        <div className="text-blue-300 text-xs mt-4">基於 8 班訓練班與康文署場地費計算</div>
+      </div>
+    </div>
+  </section>
+);
+
+export default App;

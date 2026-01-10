@@ -5,18 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>正覺壁球管理系統 (SJ Squash)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Firebase SDKs -->
+    <!-- Firebase SDKs (Compat version for broader support) -->
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
-        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; }
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; overflow-x: hidden; }
         .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); }
         .tab-active { border-bottom: 4px solid #2563eb; color: #2563eb; }
         .loading-overlay { position: fixed; inset: 0; background: white; z-index: 9999; display: flex; align-items: center; justify-content: center; transition: opacity 0.5s; }
         .hidden { display: none !important; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
 <body class="text-slate-800">
@@ -24,31 +25,31 @@
     <div id="loader" class="loading-overlay">
         <div class="text-center">
             <div class="inline-block w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            <p class="mt-4 font-bold text-slate-500 tracking-widest">系統載入中...</p>
+            <p class="mt-4 font-bold text-slate-500 tracking-widest uppercase text-xs">System Loading</p>
         </div>
     </div>
 
     <!-- Login Screen -->
-    <div id="login-screen" class="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-700 to-indigo-900 p-4 hidden">
-        <div class="bg-white p-8 rounded-[2rem] shadow-2xl w-full max-w-md transform transition-all hover:scale-[1.01]">
+    <div id="login-screen" class="min-h-screen flex items-center justify-center bg-slate-900 p-4 hidden">
+        <div class="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md">
             <div class="flex justify-center mb-6">
-                <div class="bg-blue-100 p-5 rounded-3xl text-blue-600">
+                <div class="bg-blue-600 p-5 rounded-3xl text-white shadow-lg shadow-blue-200">
                     <i class="fas fa-table-tennis-paddle-ball fa-3x"></i>
                 </div>
             </div>
-            <h1 class="text-2xl font-black text-center mb-2">SJ SQUASH</h1>
-            <p class="text-slate-400 text-center text-sm mb-8">正覺壁球校隊管理系統</p>
+            <h1 class="text-3xl font-black text-center mb-1">SJ SQUASH</h1>
+            <p class="text-slate-400 text-center text-sm mb-8 font-medium uppercase tracking-widest">Management System</p>
             
             <div class="space-y-4">
                 <div>
-                    <label class="text-xs font-bold text-slate-400 uppercase ml-1">身份 / 學生 ID</label>
-                    <input id="login-id" type="text" placeholder="例如: 1A01" class="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 ring-blue-500 transition">
+                    <label class="text-[10px] font-black text-slate-400 uppercase ml-2">身份 / 學生編號</label>
+                    <input id="login-id" type="text" placeholder="例如: 1A01 陳大文" class="w-full mt-1 px-5 py-4 bg-slate-50 border-none rounded-2xl outline-none focus:ring-2 ring-blue-500 transition font-bold text-slate-700">
                 </div>
                 <div>
-                    <label class="text-xs font-bold text-slate-400 uppercase ml-1">管理員密碼 (可跳過)</label>
-                    <input id="login-pwd" type="password" placeholder="管理員專用" class="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 ring-blue-500 transition">
+                    <label class="text-[10px] font-black text-slate-400 uppercase ml-2">管理員密碼 (可跳過)</label>
+                    <input id="login-pwd" type="password" placeholder="輸入 8888 啟用財務標籤" class="w-full mt-1 px-5 py-4 bg-slate-50 border-none rounded-2xl outline-none focus:ring-2 ring-blue-500 transition">
                 </div>
-                <button onclick="handleLogin()" class="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 active:scale-95 transition">
+                <button onclick="handleLogin()" class="w-full bg-blue-600 text-white py-5 rounded-2xl font-black hover:bg-blue-700 shadow-xl shadow-blue-100 active:scale-95 transition mt-4">
                     進入系統
                 </button>
             </div>
@@ -57,118 +58,127 @@
 
     <!-- Main App -->
     <div id="app-screen" class="hidden">
-        <header class="bg-white border-b border-slate-200 sticky top-0 z-40 px-4 h-16 flex items-center justify-between shadow-sm">
+        <header class="bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-50 px-6 h-16 flex items-center justify-between">
             <div class="flex items-center gap-2">
-                <i class="fas fa-trophy text-blue-600 text-xl"></i>
+                <div class="bg-blue-600 p-1.5 rounded-lg text-white">
+                    <i class="fas fa-trophy text-sm"></i>
+                </div>
                 <span class="font-black text-xl tracking-tighter">SJ SQUASH</span>
             </div>
             <div class="flex items-center gap-3">
-                <span id="user-badge" class="text-xs font-bold bg-slate-100 px-3 py-1.5 rounded-full text-slate-600">USER</span>
-                <button onclick="location.reload()" class="p-2 text-slate-300 hover:text-red-500 transition"><i class="fas fa-sign-out-alt"></i></button>
+                <div class="flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-full">
+                    <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span id="user-badge" class="text-[10px] font-black text-slate-600 uppercase">USER</span>
+                </div>
+                <button onclick="logout()" class="p-2 text-slate-300 hover:text-red-500 transition"><i class="fas fa-power-off"></i></button>
             </div>
         </header>
 
-        <nav class="bg-white border-b border-slate-100 sticky top-16 z-30 overflow-x-auto no-scrollbar">
-            <div class="flex px-4 max-w-4xl mx-auto">
-                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-6 py-4 font-bold text-sm whitespace-nowrap tab-active">訓練日程</button>
-                <button onclick="switchTab('ranking')" id="tab-ranking" class="px-6 py-4 font-bold text-sm whitespace-nowrap text-slate-400">積分排行</button>
-                <button onclick="switchTab('awards')" id="tab-awards" class="px-6 py-4 font-bold text-sm whitespace-nowrap text-slate-400">榮譽勳章</button>
-                <button onclick="switchTab('admin')" id="tab-admin" class="px-6 py-4 font-bold text-sm whitespace-nowrap text-slate-400 hidden">財務管理</button>
+        <nav class="bg-white border-b border-slate-100 sticky top-16 z-40 overflow-x-auto no-scrollbar">
+            <div class="flex max-w-5xl mx-auto px-4">
+                <button onclick="switchTab('ranking')" id="tab-ranking" class="px-6 py-4 font-black text-xs uppercase tracking-widest whitespace-nowrap tab-active">積分榜</button>
+                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-6 py-4 font-black text-xs uppercase tracking-widest whitespace-nowrap text-slate-400">訓練日程</button>
+                <button onclick="switchTab('awards')" id="tab-awards" class="px-6 py-4 font-black text-xs uppercase tracking-widest whitespace-nowrap text-slate-400">榮譽勳章</button>
+                <button onclick="switchTab('admin')" id="tab-admin" class="px-6 py-4 font-black text-xs uppercase tracking-widest whitespace-nowrap text-slate-400 hidden">財務分析</button>
             </div>
         </nav>
 
-        <main class="p-4 md:p-8 max-w-5xl mx-auto">
-            <!-- Dashboard View -->
-            <section id="view-dashboard" class="space-y-6">
-                <div class="flex justify-between items-end">
-                    <h2 class="text-2xl font-black">📅 訓練日程</h2>
-                    <p class="text-xs text-slate-400 font-bold" id="current-date"></p>
-                </div>
-                <div id="schedule-list" class="grid gap-4">
-                    <!-- Schedule items injected here -->
-                </div>
-            </section>
-
+        <main class="p-6 md:p-8 max-w-5xl mx-auto">
             <!-- Ranking View -->
-            <section id="view-ranking" class="hidden space-y-6">
-                <h2 class="text-2xl font-black">🏆 積分排行</h2>
-                <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
-                    <div id="ranking-list" class="divide-y divide-slate-100">
+            <section id="view-ranking" class="space-y-6">
+                <div class="flex justify-between items-end">
+                    <div>
+                        <h2 class="text-3xl font-black text-slate-800">龍虎榜</h2>
+                        <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1">Performance Ranking</p>
+                    </div>
+                </div>
+                <div class="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
+                    <div id="ranking-list" class="p-2">
                         <!-- Ranking items injected here -->
                     </div>
                 </div>
             </section>
 
+            <!-- Dashboard View -->
+            <section id="view-dashboard" class="hidden space-y-6">
+                <h2 class="text-3xl font-black text-slate-800">訓練安排</h2>
+                <div id="schedule-list" class="grid gap-4">
+                    <!-- Schedule items -->
+                </div>
+            </section>
+
             <!-- Awards View -->
             <section id="view-awards" class="hidden space-y-6">
-                <h2 class="text-2xl font-black">🎖️ 榮譽勳章</h2>
+                <h2 class="text-3xl font-black text-slate-800">榮譽勳章</h2>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div class="bg-white p-6 rounded-3xl border border-slate-100 text-center shadow-sm">
-                        <div class="text-4xl mb-2">💎</div>
-                        <div class="font-bold text-blue-600">白金章</div>
-                        <div class="text-[10px] text-slate-400 uppercase mt-1">最高榮譽</div>
+                    <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 text-center shadow-sm">
+                        <div class="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center text-3xl mx-auto mb-4">💎</div>
+                        <div class="font-black text-blue-600">白金章</div>
+                        <div class="text-[9px] text-slate-300 font-black uppercase mt-1">Elite Merit</div>
                     </div>
-                    <div class="bg-white p-6 rounded-3xl border border-slate-100 text-center shadow-sm">
-                        <div class="text-4xl mb-2">🥇</div>
-                        <div class="font-bold text-yellow-600">金章</div>
-                        <div class="text-[10px] text-slate-400 uppercase mt-1">進階水準</div>
+                    <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 text-center shadow-sm">
+                        <div class="w-16 h-16 bg-yellow-50 rounded-full flex items-center justify-center text-3xl mx-auto mb-4">🥇</div>
+                        <div class="font-black text-yellow-600">金章</div>
+                        <div class="text-[9px] text-slate-300 font-black uppercase mt-1">Gold Medal</div>
                     </div>
-                    <div class="bg-white p-6 rounded-3xl border border-slate-100 text-center shadow-sm">
-                        <div class="text-4xl mb-2">🥈</div>
-                        <div class="font-bold text-slate-400">銀章</div>
-                        <div class="text-[10px] text-slate-400 uppercase mt-1">中級水平</div>
+                    <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 text-center shadow-sm">
+                        <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-3xl mx-auto mb-4">🥈</div>
+                        <div class="font-black text-slate-400">銀章</div>
+                        <div class="text-[9px] text-slate-300 font-black uppercase mt-1">Silver Medal</div>
                     </div>
-                    <div class="bg-white p-6 rounded-3xl border border-slate-100 text-center shadow-sm">
-                        <div class="text-4xl mb-2">🥉</div>
-                        <div class="font-bold text-amber-700">銅章</div>
-                        <div class="text-[10px] text-slate-400 uppercase mt-1">基礎入門</div>
+                    <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 text-center shadow-sm">
+                        <div class="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center text-3xl mx-auto mb-4">🥉</div>
+                        <div class="font-black text-orange-700">銅章</div>
+                        <div class="text-[9px] text-slate-300 font-black uppercase mt-1">Bronze Medal</div>
                     </div>
                 </div>
             </section>
 
             <!-- Admin Financial View -->
             <section id="view-admin" class="hidden space-y-6">
-                <h2 class="text-2xl font-black">💰 財務分析 (管理員)</h2>
+                <h2 class="text-3xl font-black text-slate-800">財務預算</h2>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-blue-600 p-6 rounded-3xl text-white">
-                        <p class="text-xs font-bold opacity-70 mb-1">預計總收入</p>
-                        <p class="text-3xl font-black" id="stat-revenue">$0</p>
+                    <div class="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-xl shadow-blue-100">
+                        <p class="text-[10px] font-black opacity-60 uppercase mb-1">預計總收入 (學費)</p>
+                        <p class="text-4xl font-black" id="stat-revenue">$0</p>
                     </div>
-                    <div class="bg-slate-900 p-6 rounded-3xl text-white">
-                        <p class="text-xs font-bold opacity-70 mb-1">預計總開支</p>
-                        <p class="text-3xl font-black" id="stat-expense">$0</p>
+                    <div class="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-xl shadow-slate-200">
+                        <p class="text-[10px] font-black opacity-40 uppercase mb-1">預計總支出 (成本)</p>
+                        <p class="text-4xl font-black" id="stat-expense">$0</p>
                     </div>
-                    <div class="bg-white p-6 rounded-3xl border border-slate-200">
-                        <p class="text-xs font-bold text-slate-400 mb-1">預計盈餘</p>
-                        <p class="text-3xl font-black text-green-600" id="stat-profit">$0</p>
+                    <div class="bg-white p-8 rounded-[2.5rem] border border-slate-200">
+                        <p class="text-[10px] font-black text-slate-300 uppercase mb-1">預計淨盈餘</p>
+                        <p class="text-4xl font-black text-green-600" id="stat-profit">$0</p>
                     </div>
                 </div>
                 
-                <div class="bg-white p-6 rounded-3xl border border-slate-200">
-                    <h3 class="font-bold mb-4">開班費計算設定</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="space-y-4">
+                <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100">
+                    <h3 class="font-black text-xl mb-6">計算參數設定</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div class="space-y-6">
                             <div>
-                                <label class="text-xs font-bold text-slate-400">學生人數</label>
-                                <input type="number" id="input-students" value="50" oninput="calcAdmin()" class="w-full bg-slate-50 border-none rounded-xl p-3 mt-1">
+                                <label class="text-[10px] font-black text-slate-400 uppercase ml-1">該期學生總人數</label>
+                                <input type="range" id="input-students" min="10" max="150" value="50" oninput="updateRangeVal('val-students', this.value); calcAdmin();" class="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-blue-600 mt-2">
+                                <div class="flex justify-between text-[10px] font-bold mt-2"><span>10人</span> <span id="val-students" class="text-blue-600 text-lg font-black">50人</span> <span>150人</span></div>
                             </div>
                             <div>
-                                <label class="text-xs font-bold text-slate-400">每人學費 ($)</label>
-                                <input type="number" id="input-fee" value="250" oninput="calcAdmin()" class="w-full bg-slate-50 border-none rounded-xl p-3 mt-1">
+                                <label class="text-[10px] font-black text-slate-400 uppercase ml-1">每位學員學費 ($)</label>
+                                <input type="number" id="input-fee" value="250" oninput="calcAdmin()" class="w-full mt-2 px-5 py-4 bg-slate-50 rounded-2xl border-none font-black outline-none focus:ring-2 ring-blue-500">
                             </div>
                         </div>
-                        <div class="space-y-2">
-                            <div class="flex justify-between items-center text-sm p-3 bg-slate-50 rounded-xl">
-                                <span>校隊班 (x1)</span>
-                                <span class="font-bold">$2,750</span>
+                        <div class="bg-slate-50 p-6 rounded-3xl space-y-3">
+                            <div class="text-[10px] font-black text-slate-400 uppercase mb-2">固定開班成本 (由 Python 定義)</div>
+                            <div class="flex justify-between items-center text-sm p-4 bg-white rounded-2xl shadow-sm">
+                                <span class="font-bold text-slate-600">校隊班 (x1)</span>
+                                <span class="font-black text-blue-600">$2,750</span>
                             </div>
-                            <div class="flex justify-between items-center text-sm p-3 bg-slate-50 rounded-xl">
-                                <span>非校隊班 (x3)</span>
-                                <span class="font-bold">$4,050</span>
+                            <div class="flex justify-between items-center text-sm p-4 bg-white rounded-2xl shadow-sm">
+                                <span class="font-bold text-slate-600">非校隊班 (x3)</span>
+                                <span class="font-black text-blue-600">$4,050</span>
                             </div>
-                            <div class="flex justify-between items-center text-sm p-3 bg-slate-50 rounded-xl">
-                                <span>簡易班 (x4)</span>
-                                <span class="font-bold">$4,800</span>
+                            <div class="flex justify-between items-center text-sm p-4 bg-white rounded-2xl shadow-sm">
+                                <span class="font-bold text-slate-600">簡易班 (x4)</span>
+                                <span class="font-black text-blue-600">$4,800</span>
                             </div>
                         </div>
                     </div>
@@ -178,37 +188,35 @@
     </div>
 
     <script>
-        // --- 1. 初始化 Firebase (使用全域變數) ---
-        const firebaseConfig = window.__firebase_config ? JSON.parse(window.__firebase_config) : {
-            apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: ""
-        };
+        // --- 1. Firebase Initialization (Rule 1 & 3) ---
+        const firebaseConfig = JSON.parse(__firebase_config);
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'squash-management-v1';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'squash-management-v12';
 
-        let currentUser = null;
+        let userUID = null;
         let isAdmin = false;
 
-        // --- 2. 認證處理 ---
         window.onload = async () => {
-            document.getElementById('current-date').innerText = new Date().toLocaleDateString('zh-HK', { year: 'numeric', month: 'long', day: 'numeric' });
-            
+            // Initial Auth Flow (Rule 3)
             try {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await auth.signInWithCustomToken(__initial_auth_token);
                 } else {
                     await auth.signInAnonymously();
                 }
-            } catch (e) { console.error("Auth failed", e); }
+            } catch (e) { console.error("Auth Failure", e); }
 
             auth.onAuthStateChanged(user => {
-                currentUser = user;
-                document.getElementById('loader').classList.add('opacity-0');
-                setTimeout(() => {
-                    document.getElementById('loader').classList.add('hidden');
-                    document.getElementById('login-screen').classList.remove('hidden');
-                }, 500);
+                if (user) {
+                    userUID = user.uid;
+                    document.getElementById('loader').classList.add('opacity-0');
+                    setTimeout(() => {
+                        document.getElementById('loader').classList.add('hidden');
+                        document.getElementById('login-screen').classList.remove('hidden');
+                    }, 500);
+                }
             });
         };
 
@@ -216,125 +224,134 @@
             const id = document.getElementById('login-id').value.trim();
             const pwd = document.getElementById('login-pwd').value.trim();
 
-            if (!id) return alert("請輸入 ID 或姓名");
+            if (!id) return;
 
             if (pwd === "8888") {
                 isAdmin = true;
                 document.getElementById('tab-admin').classList.remove('hidden');
-                document.getElementById('user-badge').innerText = "🛡️ 管理員";
+                document.getElementById('user-badge').innerText = "ADMIN";
             } else {
-                document.getElementById('user-badge').innerText = `👤 ${id}`;
+                document.getElementById('user-badge').innerText = id;
             }
 
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('app-screen').classList.remove('hidden');
             
-            // 載入數據
             initDataListeners();
             calcAdmin();
         }
 
-        // --- 3. 數據同步 (Real-time) ---
+        // --- 2. Real-time Listeners (Rule 1 & 2) ---
         function initDataListeners() {
-            if (!currentUser) return;
+            if (!userUID) return;
 
-            // 監聽排行榜
-            db.collection('artifacts').doc(appId).collection('public').doc('data').collection('rankings')
-                .onSnapshot(snapshot => {
-                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    renderRanking(data);
-                }, err => console.error("Ranking Fetch Error", err));
+            // Public Data Path: artifacts/{appId}/public/data/{collection}
+            const rankPath = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('rankings');
+            rankPath.onSnapshot(snap => {
+                const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderRanking(data);
+            }, err => console.error("Ranking Error", err));
 
-            // 監聽日程
-            db.collection('artifacts').doc(appId).collection('public').doc('data').collection('schedules')
-                .onSnapshot(snapshot => {
-                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    renderSchedule(data);
-                });
+            const schedPath = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('schedules');
+            schedPath.onSnapshot(snap => {
+                const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderSchedule(data);
+            }, err => console.error("Schedule Error", err));
         }
 
-        // --- 4. 渲染邏輯 ---
-        function renderSchedule(data) {
-            const list = document.getElementById('schedule-list');
-            if (data.length === 0) {
-                list.innerHTML = `<div class="p-8 text-center text-slate-400 italic">暫無訓練安排...</div>`;
-                return;
-            }
-            list.innerHTML = data.map(s => `
-                <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600">
-                            <i class="fas fa-calendar-check"></i>
-                        </div>
-                        <div>
-                            <p class="font-black text-lg text-slate-800">${s.班級 || '壁球訓練班'}</p>
-                            <p class="text-xs text-slate-400 font-bold uppercase tracking-wider">${s.日期 || '--'} | ${s.時間 || '--'}</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs font-bold bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-full text-slate-500">
-                            📍 ${s.地點 || '待定'}
-                        </span>
-                    </div>
-                </div>
-            `).join('');
-        }
-
+        // --- 3. Rendering ---
         function renderRanking(data) {
             const list = document.getElementById('ranking-list');
             const sorted = data.sort((a, b) => (b.積分 || 0) - (a.積分 || 0));
             
+            if (sorted.length === 0) {
+                list.innerHTML = `<div class="p-12 text-center text-slate-300 font-bold italic">尚無積分數據</div>`;
+                return;
+            }
+
             list.innerHTML = sorted.map((p, idx) => `
-                <div class="flex items-center gap-4 p-4 hover:bg-slate-50 transition">
-                    <div class="w-8 h-8 flex items-center justify-center rounded-full font-black text-sm ${idx < 3 ? 'bg-blue-600 text-white' : 'text-slate-300'}">
+                <div class="flex items-center gap-4 p-4 hover:bg-slate-50 rounded-2xl transition group">
+                    <div class="w-10 h-10 flex items-center justify-center rounded-2xl font-black text-lg ${
+                        idx === 0 ? 'bg-yellow-100 text-yellow-600' : 
+                        idx === 1 ? 'bg-slate-100 text-slate-600' : 
+                        idx === 2 ? 'bg-orange-100 text-orange-600' : 'text-slate-200'
+                    }">
                         ${idx + 1}
                     </div>
                     <div class="flex-1">
-                        <div class="font-bold flex items-center gap-2">
+                        <div class="font-black text-slate-700 flex items-center gap-2">
                             ${p.姓名 || '匿名'} 
-                            ${p.章別 ? `<span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-black">${p.章別}</span>` : ''}
+                            ${p.章別 ? `<span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 uppercase font-black">${p.章別}</span>` : ''}
                         </div>
-                        <div class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">${p.班級 || '--'}</div>
+                        <div class="text-[10px] text-slate-400 font-black uppercase tracking-widest">${p.班級 || 'General'}</div>
                     </div>
                     <div class="text-right">
-                        <div class="text-xl font-black text-blue-700 leading-none">${p.積分 || 0}</div>
-                        <div class="text-[9px] text-slate-300 font-bold uppercase tracking-tighter">Points</div>
+                        <div class="text-2xl font-black text-blue-600 tracking-tighter">${p.積分 || 0}</div>
+                        <div class="text-[9px] text-slate-300 font-black uppercase tracking-tighter">Points</div>
                     </div>
                 </div>
             `).join('');
         }
 
-        // --- 5. 導覽邏輯 ---
+        function renderSchedule(data) {
+            const list = document.getElementById('schedule-list');
+            if (data.length === 0) {
+                list.innerHTML = `<div class="p-12 text-center text-slate-300 font-bold italic border border-dashed border-slate-200 rounded-3xl">暫無預定行程</div>`;
+                return;
+            }
+            list.innerHTML = data.map(s => `
+                <div class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 text-xl">
+                            <i class="fas fa-calendar-alt"></i>
+                        </div>
+                        <div>
+                            <p class="font-black text-lg text-slate-800">${s.班級 || '訓練班'}</p>
+                            <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest">${s.日期 || '--'} @ ${s.時間 || '--'}</p>
+                        </div>
+                    </div>
+                    <span class="text-[10px] font-black bg-slate-50 border border-slate-100 px-4 py-2 rounded-full text-slate-500 uppercase">
+                        📍 ${s.地點 || '待定'}
+                    </span>
+                </div>
+            `).join('');
+        }
+
+        // --- 4. Logic Helpers ---
         function switchTab(tab) {
-            ['dashboard', 'ranking', 'awards', 'admin'].forEach(t => {
+            ['ranking', 'dashboard', 'awards', 'admin'].forEach(t => {
                 const btn = document.getElementById(`tab-${t}`);
                 const view = document.getElementById(`view-${t}`);
                 if (btn) btn.classList.remove('tab-active', 'text-slate-400');
                 if (view) view.classList.add('hidden');
-                
                 if (t !== tab && btn) btn.classList.add('text-slate-400');
             });
             document.getElementById(`tab-${tab}`).classList.add('tab-active');
             document.getElementById(`view-${tab}`).classList.remove('hidden');
         }
 
-        // --- 6. 財務計算邏輯 ---
+        function updateRangeVal(id, val) {
+            document.getElementById(id).innerText = val + "人";
+        }
+
         function calcAdmin() {
             const students = parseInt(document.getElementById('input-students').value) || 0;
             const fee = parseInt(document.getElementById('input-fee').value) || 0;
             
             const revenue = students * fee;
-            const expense = 2750 + 4050 + 4800; // 根據您 Python 檔案中的預設值
+            // From Python: 2750 + (3*1350) + (4*1200) = 2750 + 4050 + 4800 = 11600
+            const expense = 11600; 
             const profit = revenue - expense;
 
             document.getElementById('stat-revenue').innerText = `$${revenue.toLocaleString()}`;
             document.getElementById('stat-expense').innerText = `$${expense.toLocaleString()}`;
             document.getElementById('stat-profit').innerText = `$${profit.toLocaleString()}`;
-            document.getElementById('stat-profit').className = `text-3xl font-black ${profit >= 0 ? 'text-green-600' : 'text-red-500'}`;
+            document.getElementById('stat-profit').className = `text-4xl font-black ${profit >= 0 ? 'text-green-600' : 'text-red-500'}`;
+        }
+
+        function logout() {
+            location.reload();
         }
     </script>
 </body>
 </html>
-
-export default App;
-

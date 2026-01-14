@@ -1,596 +1,508 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  LayoutDashboard, 
+  Users, 
+  ClipboardCheck, 
+  DollarSign, 
+  Plus, 
+  Trash2, 
+  UserCheck,
+  Calendar as CalendarIcon,
+  LogOut,
+  ShieldCheck,
+  Menu,
+  X,
+  Loader2
+} from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
-  getFirestore, collection, doc, setDoc, getDocs, onSnapshot, 
-  query, deleteDoc, addDoc, updateDoc 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  onSnapshot, 
+  addDoc, 
+  deleteDoc,
+  query
 } from 'firebase/firestore';
 import { 
-  getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken 
+  getAuth, 
+  signInWithCustomToken, 
+  signInAnonymously, 
+  onAuthStateChanged 
 } from 'firebase/auth';
-import { 
-  Calendar, Trophy, ClipboardCheck, Medal, Megaphone, 
-  Calculator, LogOut, Shield, User, ChevronRight, Save, Trash2, Plus, Download, RefreshCw
-} from 'lucide-react';
 
-// --- Firebase 配置 ---
-// 注意：在實際部署時，請將此處替換為您的 Vercel 環境變數或實際 Config
-const firebaseConfig = window.VITE_FIREBASE_CONFIG ? JSON.parse(window.VITE_FIREBASE_CONFIG) : {
-  const firebaseConfig = {
-  apiKey: "AIzaSyAYm_63S9pKMZ51Qb2ZlCHRsfuGzy2gstw",
-  authDomain: "squashreact.firebaseapp.com",
-  projectId: "squashreact",
-  storageBucket: "squashreact.firebasestorage.app",
-  messagingSenderId: "342733564194",
-  appId: "1:342733564194:web:7345d90d7d22c0b605dd7b",
-  measurementId: "G-JRZ0QSFLLQ"
-};
+/**
+ * --- Firebase 初始化 ---
+ * 注意：在 Vercel 生產環境中，這些變數通常來自環境變數。
+ * 此處適配環境提供的配置。
+ */
+const firebaseConfig = typeof __firebase_config !== 'undefined' 
+  ? JSON.parse(__firebase_config) 
+  : { /* 您的 Firebase Config 備份 */ };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'squash-management-v1';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'squash-mgmt-app';
 
-// --- 常數定義 ---
-const BADGE_AWARDS = {
-  "白金章": { points: 400, icon: "💎" },
-  "金章": { points: 200, icon: "🥇" },
-  "銀章": { points: 100, icon: "🥈" },
-  "銅章": { points: 50, icon: "🥉" },
-  "無": { points: 0, icon: "" }
-};
-
-// --- 組件開始 ---
+// --- 主要組件 ---
 export default function App() {
   const [user, setUser] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [activeMenu, setActiveMenu] = useState("📅 訓練日程表");
-  const [loginForm, setLoginForm] = useState({ mode: 'student', class: '', num: '', password: '' });
-  
-  // 數據狀態
-  const [schedules, setSchedules] = useState([]);
-  const [classPlayers, setClassPlayers] = useState([]);
-  const [rankings, setRankings] = useState([]);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [students, setStudents] = useState([]);
   const [attendance, setAttendance] = useState([]);
-  const [announcements, setAnnouncements] = useState([]);
-  const [tournaments, setTournaments] = useState([]);
-  const [awards, setAwards] = useState([]);
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  
+  // 財務設定狀態
+  const [financeConfig, setFinanceConfig] = useState({
+    nTeam: 1, costTeam: 2750,
+    nTrain: 3, costTrain: 1350,
+    nHobby: 4, costHobby: 1200,
+    totalStudents: 50, feePerStudent: 250
+  });
 
-  // --- 1. 身份驗證 ---
+  // 1. Firebase 認證監聽 (遵循 Rule 3)
   useEffect(() => {
     const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
-        await signInAnonymously(auth);
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Auth Error:", err);
       }
     };
     initAuth();
-    return onAuthStateChanged(auth, (u) => setUser(u));
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) setLoading(false);
+    });
+
+    return () => unsubscribeAuth();
   }, []);
 
-  // --- 2. 數據監聽 (Firestore Real-time) ---
+  // 2. 數據監聽 (遵循 Rule 1 & 2)
   useEffect(() => {
     if (!user) return;
 
-    const collections = [
-      { name: 'schedules', setter: setSchedules },
-      { name: 'class_players', setter: setClassPlayers },
-      { name: 'rankings', setter: setRankings },
-      { name: 'attendance_records', setter: setAttendance },
-      { name: 'announcements', setter: setAnnouncements },
-      { name: 'tournaments', setter: setTournaments },
-      { name: 'student_awards', setter: setAwards }
-    ];
+    // 監聽學生名單 (路徑符合 Rule 1)
+    const qStudents = query(collection(db, 'artifacts', appId, 'public', 'data', 'students'));
+    const unsubStudents = onSnapshot(qStudents, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setStudents(data);
+    }, (err) => console.error("Students error:", err));
 
-    const unsubscribes = collections.map(coll => {
-      return onSnapshot(
-        collection(db, 'artifacts', appId, 'public', 'data', coll.name),
-        (snapshot) => {
-          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          coll.setter(data);
-        },
-        (error) => console.error(`Error fetching ${coll.name}:`, error)
-      );
-    });
+    // 監聽考勤紀錄
+    const qAttendance = query(collection(db, 'artifacts', appId, 'public', 'data', 'attendance'));
+    const unsubAttendance = onSnapshot(qAttendance, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAttendance(data);
+    }, (err) => console.error("Attendance error:", err));
 
-    return () => unsubscribes.forEach(unsub => unsub());
+    return () => {
+      unsubStudents();
+      unsubAttendance();
+    };
   }, [user]);
 
-  // --- 3. 處理登入 ---
-  const handleLogin = () => {
-    if (loginForm.mode === 'admin') {
-      if (loginForm.password === "8888") {
-        setIsAdmin(true);
-        // 在 React 版中，我們不需要重新設置 User，只需標記 Admin 狀態
-      } else {
-        alert("管理員密碼錯誤");
-      }
+  // --- 資料操作邏輯 ---
+  const addStudent = async (name, level) => {
+    if (!user) return;
+    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students'), {
+      name,
+      level,
+      joinDate: new Date().toISOString().split('T')[0],
+      active: true,
+      createdBy: user.uid
+    });
+  };
+
+  const deleteStudent = async (id) => {
+    if (!user) return;
+    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', id));
+  };
+
+  const toggleAttendance = async (studentId, date) => {
+    if (!user) return;
+    const recordId = `${studentId}_${date}`;
+    const recordRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendance', recordId);
+    const snap = await getDoc(recordRef);
+
+    if (snap.exists()) {
+      await deleteDoc(recordRef);
     } else {
-      if (loginForm.class && loginForm.num) {
-        setIsAdmin(false);
-        // 使用班級+學號作為虛擬 ID
-      } else {
-        alert("請填寫班別及學號");
-      }
+      await setDoc(recordRef, {
+        studentId,
+        date,
+        status: 'present',
+        timestamp: new Date().toISOString()
+      });
     }
   };
 
-  const getStudentId = () => `${loginForm.class.toUpperCase()}${loginForm.num.padStart(2, '0')}`;
+  // 財務計算 (Memoized)
+  const financialSummary = useMemo(() => {
+    const revenue = financeConfig.totalStudents * financeConfig.feePerStudent;
+    const expense = (financeConfig.nTeam * financeConfig.costTeam) + 
+                    (financeConfig.nTrain * financeConfig.costTrain) + 
+                    (financeConfig.nHobby * financeConfig.costHobby);
+    return { revenue, expense, profit: revenue - expense };
+  }, [financeConfig]);
 
-  // --- 4. 渲染邏輯 ---
-  if (!isAdmin && !loginForm.class && activeMenu !== "📢 活動公告" && activeMenu !== "🗓️ 比賽報名與賽程") {
-    // 如果未登入（且不是查看公開資訊），顯示登入界面
+  // --- 子頁面組件 ---
+  
+  const Dashboard = () => (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+          <div className="flex justify-between items-start mb-4">
+            <p className="text-slate-500 font-medium">總學生人數</p>
+            <Users className="text-blue-500" size={20} />
+          </div>
+          <h3 className="text-3xl font-bold text-slate-800">{students.length} <span className="text-sm font-normal text-slate-400">位</span></h3>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+          <div className="flex justify-between items-start mb-4">
+            <p className="text-slate-500 font-medium">今日出席</p>
+            <ClipboardCheck className="text-green-500" size={20} />
+          </div>
+          <h3 className="text-3xl font-bold text-slate-800">
+            {attendance.filter(a => a.date === new Date().toISOString().split('T')[0]).length} <span className="text-sm font-normal text-slate-400">位</span>
+          </h3>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+          <div className="flex justify-between items-start mb-4">
+            <p className="text-slate-500 font-medium">預計盈餘</p>
+            <DollarSign className="text-orange-500" size={20} />
+          </div>
+          <h3 className="text-3xl font-bold text-slate-800">${financialSummary.profit.toLocaleString()}</h3>
+        </div>
+      </div>
+
+      <div className="bg-gradient-to-br from-blue-600 to-blue-700 p-8 rounded-3xl text-white shadow-xl shadow-blue-200">
+        <h3 className="text-xl font-bold mb-2">歡迎回來，教練</h3>
+        <p className="text-blue-100 opacity-90 mb-6 max-w-md text-sm">
+          系統已連結 Firebase 實時數據庫，您的任何更改都會即時同步給其他協作人員。
+        </p>
+        <button 
+          onClick={() => setActiveTab('attendance')}
+          className="bg-white text-blue-600 px-6 py-2 rounded-full font-bold text-sm hover:bg-blue-50 transition-colors"
+        >
+          立即點名
+        </button>
+      </div>
+    </div>
+  );
+
+  const StudentList = () => {
+    const [newName, setNewName] = useState('');
+    const [newLevel, setNewLevel] = useState('校隊');
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
-          <div className="flex justify-center mb-6">
-            <div className="bg-blue-600 p-3 rounded-full text-white">
-              <Shield size={32} />
-            </div>
-          </div>
-          <h1 className="text-2xl font-bold text-center mb-6">正覺壁球管理系統</h1>
-          
-          <div className="flex bg-gray-100 p-1 rounded-lg mb-6">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="p-6 bg-white border-b flex flex-col sm:flex-row justify-between items-center gap-4">
+          <h3 className="font-bold text-xl text-slate-800">學員名冊</h3>
+          <div className="flex w-full sm:w-auto gap-2">
+            <input 
+              type="text" 
+              placeholder="輸入學員姓名" 
+              className="flex-1 sm:w-48 px-4 py-2 bg-slate-50 border-none rounded-xl text-sm outline-none focus:ring-2 ring-blue-500/20"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+            <select 
+              className="px-4 py-2 bg-slate-50 border-none rounded-xl text-sm"
+              value={newLevel}
+              onChange={(e) => setNewLevel(e.target.value)}
+            >
+              <option>校隊</option>
+              <option>非校隊</option>
+              <option>簡易班</option>
+            </select>
             <button 
-              onClick={() => setLoginForm({...loginForm, mode: 'student'})}
-              className={`flex-1 py-2 rounded-md text-sm font-medium transition ${loginForm.mode === 'student' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}
-            >學生/家長</button>
-            <button 
-              onClick={() => setLoginForm({...loginForm, mode: 'admin'})}
-              className={`flex-1 py-2 rounded-md text-sm font-medium transition ${loginForm.mode === 'admin' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}
-            >管理員</button>
+              onClick={() => { if(newName) { addStudent(newName, newLevel); setNewName(''); } }}
+              className="bg-blue-600 text-white p-2 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200"
+            >
+              <Plus size={24} />
+            </button>
           </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="text-slate-400 border-b">
+                <th className="p-6 font-medium">姓名</th>
+                <th className="p-6 font-medium">級別</th>
+                <th className="p-6 font-medium">加入日期</th>
+                <th className="p-6 font-medium text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {students.map(s => (
+                <tr key={s.id} className="group hover:bg-slate-50 transition-colors">
+                  <td className="p-6 font-semibold text-slate-700">{s.name}</td>
+                  <td className="p-6">
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                      s.level === '校隊' ? 'bg-purple-100 text-purple-700' : 
+                      s.level === '非校隊' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {s.level}
+                    </span>
+                  </td>
+                  <td className="p-6 text-slate-400">{s.joinDate}</td>
+                  <td className="p-6 text-right">
+                    <button 
+                      onClick={() => deleteStudent(s.id)}
+                      className="text-slate-300 hover:text-red-500 transition-colors p-2"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {students.length === 0 && (
+            <div className="p-12 text-center text-slate-400">尚無學員資料，請由右上方新增。</div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
-          {loginForm.mode === 'student' ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+  const AttendanceView = () => {
+    const today = new Date().toISOString().split('T')[0];
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h3 className="text-2xl font-bold text-slate-800">每日考勤</h3>
+            <p className="text-slate-500 text-sm">點擊學員卡片即可完成簽到</p>
+          </div>
+          <div className="bg-white border px-4 py-2 rounded-xl shadow-sm font-mono text-blue-600">
+            {today}
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          {students.map(s => {
+            const isPresent = attendance.some(a => a.studentId === s.id && a.date === today);
+            return (
+              <button 
+                key={s.id}
+                onClick={() => toggleAttendance(s.id, today)}
+                className={`p-5 rounded-2xl border-2 transition-all flex flex-col gap-3 relative overflow-hidden ${
+                  isPresent 
+                    ? 'border-green-500 bg-green-50 shadow-green-100 shadow-lg' 
+                    : 'border-white bg-white hover:border-slate-200 shadow-sm'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isPresent ? 'bg-green-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                  {isPresent ? <UserCheck size={20} /> : <Users size={20} />}
+                </div>
+                <div className="text-left">
+                  <p className={`font-bold ${isPresent ? 'text-green-900' : 'text-slate-700'}`}>{s.name}</p>
+                  <p className={`text-[10px] ${isPresent ? 'text-green-600' : 'text-slate-400'}`}>{s.level}</p>
+                </div>
+                {isPresent && (
+                  <div className="absolute top-0 right-0 p-2">
+                    <div className="bg-green-500 w-2 h-2 rounded-full animate-ping" />
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const FinancialView = () => (
+    <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-red-50 text-red-600 rounded-lg"><DollarSign size={20}/></div>
+            <h4 className="font-bold text-slate-800">預計支出 (開班費)</h4>
+          </div>
+          <div className="space-y-5">
+            {[
+              { label: '校隊訓練班 (班)', key: 'nTeam' },
+              { label: '非校隊訓練班 (班)', key: 'nTrain' },
+              { label: '簡易運動班 (班)', key: 'nHobby' }
+            ].map(item => (
+              <div key={item.key}>
+                <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">{item.label}</label>
                 <input 
-                  type="text" placeholder="班別 (如 1A)" 
-                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  value={loginForm.class} onChange={e => setLoginForm({...loginForm, class: e.target.value})}
-                />
-                <input 
-                  type="text" placeholder="學號 (如 01)" 
-                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  value={loginForm.num} onChange={e => setLoginForm({...loginForm, num: e.target.value})}
+                  type="number" 
+                  className="w-full p-3 bg-slate-50 border-none rounded-xl focus:ring-2 ring-red-500/20 transition-all" 
+                  value={financeConfig[item.key]} 
+                  onChange={e => setFinanceConfig({...financeConfig, [item.key]: Number(e.target.value)})}
                 />
               </div>
-            </div>
-          ) : (
-            <input 
-              type="password" placeholder="管理員密碼" 
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})}
-            />
-          )}
-
-          <button 
-            onClick={handleLogin}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg mt-6 font-bold hover:bg-blue-700 transition"
-          >登入系統</button>
+            ))}
+          </div>
         </div>
+
+        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-green-50 text-green-600 rounded-lg"><DollarSign size={20}/></div>
+            <h4 className="font-bold text-slate-800">預計收入 (學費)</h4>
+          </div>
+          <div className="space-y-5">
+            <div>
+              <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">預計總人數</label>
+              <input 
+                type="number" 
+                className="w-full p-3 bg-slate-50 border-none rounded-xl focus:ring-2 ring-green-500/20 transition-all" 
+                value={financeConfig.totalStudents} 
+                onChange={e => setFinanceConfig({...financeConfig, totalStudents: Number(e.target.value)})}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">每位學員學費 ($)</label>
+              <input 
+                type="number" 
+                className="w-full p-3 bg-slate-50 border-none rounded-xl focus:ring-2 ring-green-500/20 transition-all" 
+                value={financeConfig.feePerStudent} 
+                onChange={e => setFinanceConfig({...financeConfig, feePerStudent: Number(e.target.value)})}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-slate-900 text-white p-10 rounded-3xl shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-12 opacity-10 pointer-events-none">
+          <DollarSign size={160} />
+        </div>
+        <div className="flex flex-col md:flex-row justify-between items-center gap-10 relative z-10">
+          <div className="text-center md:text-left">
+            <p className="text-slate-400 text-sm font-medium mb-1">預計總收入</p>
+            <p className="text-4xl font-bold text-green-400 font-mono">${financialSummary.revenue.toLocaleString()}</p>
+          </div>
+          <div className="h-12 w-px bg-slate-800 hidden md:block" />
+          <div className="text-center md:text-left">
+            <p className="text-slate-400 text-sm font-medium mb-1">預計總支出</p>
+            <p className="text-4xl font-bold text-red-400 font-mono">${financialSummary.expense.toLocaleString()}</p>
+          </div>
+          <div className="h-12 w-px bg-slate-800 hidden md:block" />
+          <div className="bg-white/5 p-6 rounded-2xl border border-white/10 text-center min-w-[200px]">
+            <p className="text-blue-400 text-sm font-bold mb-1 uppercase tracking-widest">淨盈餘</p>
+            <p className="text-5xl font-black text-white font-mono">${financialSummary.profit.toLocaleString()}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-blue-600">
+        <Loader2 className="animate-spin" size={48} />
       </div>
     );
   }
 
+  // --- 佈局架構 ---
+  const menuItems = [
+    { id: 'dashboard', label: '儀表板', icon: LayoutDashboard },
+    { id: 'students', label: '名單管理', icon: Users },
+    { id: 'attendance', label: '每日考勤', icon: ClipboardCheck },
+    { id: 'financial', label: '財務預算', icon: DollarSign },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900 selection:bg-blue-100 selection:text-blue-900">
       {/* 側邊欄 */}
-      <div className="w-full md:w-64 bg-white border-r shadow-sm p-4 flex flex-col">
-        <div className="flex items-center gap-2 mb-8 px-2">
-          <div className="bg-blue-600 p-1.5 rounded-lg text-white">
-            <Trophy size={20} />
-          </div>
-          <h2 className="font-bold text-gray-800">正覺壁球管理</h2>
-        </div>
-
-        <nav className="flex-1 space-y-1">
-          {[
-            { n: "📅 訓練日程表", i: <Calendar size={18}/> },
-            { n: "🏆 隊員排行榜", i: <Trophy size={18}/> },
-            { n: "📝 考勤點名", i: <ClipboardCheck size={18}/> },
-            { n: "🏅 學生得獎紀錄", i: <Medal size={18}/> },
-            { n: "📢 活動公告", i: <Megaphone size={18}/> },
-            { n: "🗓️ 比賽報名與賽程", i: <RefreshCw size={18}/> },
-            ...(isAdmin ? [{ n: "💰 學費與預算核算", i: <Calculator size={18}/> }] : [])
-          ].map(item => (
-            <button
-              key={item.n}
-              onClick={() => setActiveMenu(item.n)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${activeMenu === item.n ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-              {item.i} {item.n}
-            </button>
-          ))}
-        </nav>
-
-        <div className="mt-8 pt-4 border-t px-2">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-gray-600">
-              {isAdmin ? <Shield size={16}/> : <User size={16}/>}
+      <aside className={`
+        fixed md:static inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-100 transition-transform duration-300 ease-in-out
+        ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}
+      `}>
+        <div className="p-8 flex flex-col h-full">
+          <div className="flex items-center gap-4 mb-12">
+            <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200">
+              <ShieldCheck className="text-white" size={28} />
             </div>
-            <div className="text-xs">
-              <p className="font-bold text-gray-800">{isAdmin ? "管理員" : `學生 ${getStudentId()}`}</p>
-              <p className="text-gray-500">已登入</p>
+            <div>
+              <h2 className="text-xl font-black tracking-tight text-slate-800">正覺壁球</h2>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Squash Management</p>
             </div>
-          </div>
-          <button 
-            onClick={() => window.location.reload()}
-            className="w-full flex items-center gap-2 text-sm text-red-500 hover:bg-red-50 p-2 rounded-lg transition"
-          >
-            <LogOut size={16}/> 登出系統
-          </button>
-        </div>
-      </div>
-
-      {/* 主內容區 */}
-      <div className="flex-1 p-4 md:p-8 overflow-y-auto">
-        <div className="max-w-5xl mx-auto">
-          <Header title={activeMenu} />
-          <div className="mt-6">
-            {activeMenu === "📅 訓練日程表" && <ScheduleModule data={schedules} isAdmin={isAdmin} />}
-            {activeMenu === "🏆 隊員排行榜" && <RankingModule data={rankings} isAdmin={isAdmin} players={classPlayers} />}
-            {activeMenu === "📝 考勤點名" && <AttendanceModule isAdmin={isAdmin} schedules={schedules} players={classPlayers} attendance={attendance} user={getStudentId()} />}
-            {activeMenu === "🏅 學生得獎紀錄" && <AwardsModule data={awards} isAdmin={isAdmin} currentStudent={isAdmin ? "" : rankings.find(r => r.id.includes(loginForm.class))?.姓名} />}
-            {activeMenu === "📢 活動公告" && <AnnouncementsModule data={announcements} isAdmin={isAdmin} />}
-            {activeMenu === "🗓️ 比賽報名與賽程" && <TournamentsModule data={tournaments} isAdmin={isAdmin} />}
-            {activeMenu === "💰 學費與預算核算" && <BudgetModule />}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// --- 子模組組件 ---
-
-function Header({ title }) {
-  return (
-    <div className="flex items-center justify-between mb-2">
-      <h1 className="text-2xl font-bold text-gray-800">{title}</h1>
-      <div className="text-xs text-gray-400">最後更新：{new Date().toLocaleDateString()}</div>
-    </div>
-  );
-}
-
-// 模組 1: 日程表
-function ScheduleModule({ data, isAdmin }) {
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-      <table className="w-full text-left border-collapse">
-        <thead className="bg-gray-50 border-b">
-          <tr>
-            <th className="p-4 font-semibold text-gray-600">班級</th>
-            <th className="p-4 font-semibold text-gray-600">地點</th>
-            <th className="p-4 font-semibold text-gray-600">時間</th>
-            <th className="p-4 font-semibold text-gray-600">具體日期</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.length > 0 ? data.map((item, idx) => (
-            <tr key={idx} className="border-b hover:bg-gray-50">
-              <td className="p-4 font-medium">{item.班級}</td>
-              <td className="p-4 text-gray-600">{item.地點}</td>
-              <td className="p-4 text-gray-600">{item.時間}</td>
-              <td className="p-4 text-xs text-gray-500 max-w-xs">{item.具體日期}</td>
-            </tr>
-          )) : (
-            <tr><td colSpan="4" className="p-8 text-center text-gray-400">目前沒有日程安排</td></tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// 模組 2: 排行榜
-function RankingModule({ data, isAdmin, players }) {
-  const sortedData = useMemo(() => {
-    return [...data].sort((a, b) => (b.積分 || 0) - (a.積分 || 0));
-  }, [data]);
-
-  const handleSync = async () => {
-    if (!window.confirm("確定要從名單同步所有學生到排行榜嗎？(預設 100 分)")) return;
-    for (const p of players) {
-      const docId = `${p.年級 || 'NA'}_${p.姓名}`;
-      const exists = data.find(r => r.id === docId);
-      if (!exists) {
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rankings', docId), {
-          年級: p.年級 || '-',
-          班級: p.班級 || '-',
-          姓名: p.姓名,
-          積分: 100,
-          章別: "無"
-        });
-      }
-    }
-    alert("同步完成");
-  };
-
-  return (
-    <div className="space-y-4">
-      {isAdmin && (
-        <div className="flex gap-2">
-          <button onClick={handleSync} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">
-            <RefreshCw size={16}/> 從名單同步學生
-          </button>
-        </div>
-      )}
-      <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="p-4 font-semibold text-gray-600 w-16">排名</th>
-              <th className="p-4 font-semibold text-gray-600">姓名</th>
-              <th className="p-4 font-semibold text-gray-600">班級</th>
-              <th className="p-4 font-semibold text-gray-600 text-right">積分</th>
-              <th className="p-4 font-semibold text-gray-600">榮譽</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedData.map((item, idx) => (
-              <tr key={item.id} className="border-b hover:bg-gray-50">
-                <td className="p-4">
-                  {idx < 3 ? (
-                    <span className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white ${idx === 0 ? 'bg-yellow-400' : idx === 1 ? 'bg-gray-300' : 'bg-orange-400'}`}>
-                      {idx + 1}
-                    </span>
-                  ) : <span className="pl-3 text-gray-400">{idx + 1}</span>}
-                </td>
-                <td className="p-4 font-bold">{item.姓名}</td>
-                <td className="p-4 text-gray-500">{item.年級} {item.班級}</td>
-                <td className="p-4 text-right font-mono font-bold text-blue-600">{item.積分}</td>
-                <td className="p-4">
-                  {item.章別 !== "無" && (
-                    <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs font-bold">
-                      {BADGE_AWARDS[item.章別]?.icon} {item.章別}
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// 模組 3: 考勤
-function AttendanceModule({ isAdmin, schedules, players, attendance, user }) {
-  const [selectedClass, setSelectedClass] = useState("");
-  const [selectedDate, setSelectedDate] = useState("");
-
-  const currentClassDates = useMemo(() => {
-    const sched = schedules.find(s => s.班級 === selectedClass);
-    return sched ? sched.具體日期.split(",").map(d => d.trim()) : [];
-  }, [selectedClass, schedules]);
-
-  const currentPlayers = useMemo(() => {
-    return players.filter(p => p.班級 === selectedClass);
-  }, [selectedClass, players]);
-
-  const currentRecord = useMemo(() => {
-    return attendance.find(a => a.班級 === selectedClass && a.日期 === selectedDate);
-  }, [attendance, selectedClass, selectedDate]);
-
-  const handleSave = async (presentList) => {
-    const docId = `${selectedClass}_${selectedDate}`.replace(/\//g, '-');
-    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'attendance_records', docId), {
-      班級: selectedClass,
-      日期: selectedDate,
-      出席人數: presentList.length,
-      出席名單: presentList.join(", "),
-      記錄人: user
-    });
-    alert("點名儲存成功");
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <select 
-          className="p-3 border rounded-xl outline-none"
-          value={selectedClass} onChange={e => setSelectedClass(e.target.value)}
-        >
-          <option value="">選擇班別</option>
-          {schedules.map(s => <option key={s.id} value={s.班級}>{s.班級}</option>)}
-        </select>
-        <select 
-          className="p-3 border rounded-xl outline-none"
-          value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
-          disabled={!selectedClass}
-        >
-          <option value="">選擇日期</option>
-          {currentClassDates.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-      </div>
-
-      {selectedClass && selectedDate && (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="font-bold text-lg">{selectedClass} - {selectedDate} 點名冊</h3>
-            {currentRecord && <span className="text-xs text-gray-400">上次更新：{currentRecord.記錄人}</span>}
           </div>
           
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {currentPlayers.map(p => {
-              const isPresent = currentRecord?.出席名單.includes(p.姓名);
-              return (
-                <button
-                  key={p.姓名}
-                  disabled={!isAdmin}
-                  onClick={() => {
-                    const currentList = currentRecord?.出席名單 ? currentRecord.出席名單.split(", ").filter(x => x) : [];
-                    const newList = isPresent ? currentList.filter(n => n !== p.姓名) : [...currentList, p.姓名];
-                    handleSave(newList);
-                  }}
-                  className={`p-3 rounded-xl border text-sm font-medium transition flex items-center justify-between ${isPresent ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white text-gray-500'}`}
-                >
-                  {p.姓名}
-                  {isPresent && <ClipboardCheck size={14}/>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+          <nav className="flex-1 space-y-2">
+            {menuItems.map(item => (
+              <button
+                key={item.id}
+                onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
+                className={`w-full flex items-center gap-4 px-4 py-4 rounded-2xl transition-all duration-200 ${
+                  activeTab === item.id 
+                    ? 'bg-blue-600 text-white shadow-xl shadow-blue-200 translate-x-1' 
+                    : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+                }`}
+              >
+                <item.icon size={22} />
+                <span className="font-bold">{item.label}</span>
+              </button>
+            ))}
+          </nav>
 
-// 模組 4: 得獎紀錄
-function AwardsModule({ data, isAdmin, currentStudent }) {
-  return (
-    <div className="grid grid-cols-1 gap-4">
-      {data.sort((a, b) => new Date(b.日期) - new Date(a.日期)).map(item => {
-        const isMine = currentStudent && item.學生姓名 === currentStudent;
-        return (
-          <div key={item.id} className={`p-6 rounded-2xl border shadow-sm transition ${isMine ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-100'}`}>
-            <div className="flex justify-between items-start">
-              <div>
-                <span className="inline-block bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs font-bold mb-2">🏆 {item.獎項}</span>
-                <h3 className="text-xl font-bold text-gray-800">{item.比賽名稱}</h3>
-                <p className="text-gray-600 mt-2 font-medium">學生：{item.學生姓名} {isMine && "⭐"}</p>
-                <p className="text-sm text-gray-400 mt-1">日期：{item.日期}</p>
-                {item.備註 && <p className="mt-3 text-sm italic text-gray-500 border-t pt-2">{item.備註}</p>}
+          <div className="mt-auto pt-8 border-t border-slate-100">
+            <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl">
+              <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm">
+                {user?.uid?.substring(0,1).toUpperCase() || 'C'}
               </div>
-              {isAdmin && (
-                <button onClick={async () => {
-                  if(confirm("確定刪除？")) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_awards', item.id));
-                }} className="text-red-400 hover:text-red-600 p-2"><Trash2 size={18}/></button>
-              )}
+              <div className="overflow-hidden flex-1">
+                <p className="text-xs font-bold text-slate-800 truncate">線上教練</p>
+                <p className="text-[10px] text-slate-400 truncate opacity-70">ID: {user?.uid || 'Loading...'}</p>
+              </div>
             </div>
           </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// 模組 5: 公告系統
-function AnnouncementsModule({ data, isAdmin }) {
-  const [newPost, setNewPost] = useState({ title: '', content: '' });
-
-  const handlePost = async () => {
-    if (!newPost.title || !newPost.content) return;
-    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'announcements'), {
-      標題: newPost.title,
-      內容: newPost.content,
-      日期: new Date().toISOString().split('T')[0]
-    });
-    setNewPost({ title: '', content: '' });
-  };
-
-  return (
-    <div className="space-y-6">
-      {isAdmin && (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border space-y-4">
-          <h3 className="font-bold">發布新公告</h3>
-          <input 
-            type="text" placeholder="標題" className="w-full p-2 border rounded-lg"
-            value={newPost.title} onChange={e => setNewPost({...newPost, title: e.target.value})}
-          />
-          <textarea 
-            placeholder="內容" className="w-full p-2 border rounded-lg h-24"
-            value={newPost.content} onChange={e => setNewPost({...newPost, content: e.target.value})}
-          />
-          <button onClick={handlePost} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold">發布</button>
         </div>
+      </aside>
+
+      {/* 主內容區 */}
+      <main className="flex-1 overflow-y-auto relative h-screen">
+        <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-40 px-8 py-5 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button 
+              className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg" 
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu size={24} />
+            </button>
+            <h2 className="text-xl font-bold text-slate-800">
+              {menuItems.find(m => m.id === activeTab)?.label}
+            </h2>
+          </div>
+          <div className="flex items-center gap-4">
+             <div className="hidden sm:flex items-center gap-2 text-sm font-medium text-slate-400 bg-slate-50 px-4 py-2 rounded-full">
+              <CalendarIcon size={16} />
+              {new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' })}
+            </div>
+          </div>
+        </header>
+
+        <div className="p-8 max-w-7xl mx-auto">
+          {activeTab === 'dashboard' && <Dashboard />}
+          {activeTab === 'students' && <StudentList />}
+          {activeTab === 'attendance' && <AttendanceView />}
+          {activeTab === 'financial' && <FinancialView />}
+        </div>
+      </main>
+
+      {/* 手機版遮罩 */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 md:hidden transition-opacity"
+          onClick={() => setSidebarOpen(false)}
+        />
       )}
-      <div className="space-y-4">
-        {data.map(item => (
-          <div key={item.id} className="bg-white p-6 rounded-2xl shadow-sm border">
-            <div className="flex justify-between items-center mb-2">
-              <h4 className="font-bold text-lg text-blue-600">{item.標題}</h4>
-              <span className="text-xs text-gray-400">{item.日期}</span>
-            </div>
-            <p className="text-gray-600 whitespace-pre-wrap">{item.內容}</p>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
-
-// 模組 6: 比賽報名
-function TournamentsModule({ data, isAdmin }) {
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-      <table className="w-full text-left">
-        <thead className="bg-gray-50 border-b">
-          <tr>
-            <th className="p-4 font-semibold">比賽名稱</th>
-            <th className="p-4 font-semibold">日期</th>
-            <th className="p-4 font-semibold">截止</th>
-            <th className="p-4 font-semibold">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map(item => (
-            <tr key={item.id} className="border-b">
-              <td className="p-4 font-medium">{item.比賽名稱}</td>
-              <td className="p-4 text-sm">{item.日期}</td>
-              <td className="p-4 text-sm text-red-500 font-bold">{item.截止日期}</td>
-              <td className="p-4">
-                <a href={item.連結} target="_blank" rel="noreferrer" className="text-blue-600 flex items-center gap-1 text-sm font-bold underline">詳情 <ChevronRight size={14}/></a>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// 模組 7: 預算核算
-function BudgetModule() {
-  const [config, setConfig] = useState({
-    nTeam: 1, costTeam: 2750,
-    nTrain: 3, costTrain: 1350,
-    nHobby: 4, costHobby: 1200,
-    students: 50, fee: 250
-  });
-
-  const totalRevenue = config.students * config.fee;
-  const totalExpense = (config.nTeam * config.costTeam) + (config.nTrain * config.costTrain) + (config.nHobby * config.costHobby);
-  const profit = totalRevenue - totalExpense;
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border space-y-4">
-          <h3 className="font-bold border-b pb-2">支出設定 (開班數)</h3>
-          <div className="grid grid-cols-1 gap-3">
-            <label className="text-sm">校隊訓練班數量：<input type="number" className="ml-2 p-1 border rounded w-16" value={config.nTeam} onChange={e => setConfig({...config, nTeam: parseInt(e.target.value)})}/></label>
-            <label className="text-sm">非校隊訓練班數量：<input type="number" className="ml-2 p-1 border rounded w-16" value={config.nTrain} onChange={e => setConfig({...config, nTrain: parseInt(e.target.value)})}/></label>
-            <label className="text-sm">簡易運動班數量：<input type="number" className="ml-2 p-1 border rounded w-16" value={config.nHobby} onChange={e => setConfig({...config, nHobby: parseInt(e.target.value)})}/></label>
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border space-y-4">
-          <h3 className="font-bold border-b pb-2">收入設定</h3>
-          <div className="grid grid-cols-1 gap-3">
-            <label className="text-sm">總學生人數：<input type="number" className="ml-2 p-1 border rounded w-24" value={config.students} onChange={e => setConfig({...config, students: parseInt(e.target.value)})}/></label>
-            <label className="text-sm">每人學費 ($)：<input type="number" className="ml-2 p-1 border rounded w-24" value={config.fee} onChange={e => setConfig({...config, fee: parseInt(e.target.value)})}/></label>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-blue-600 text-white p-6 rounded-2xl shadow-md">
-          <p className="text-xs opacity-80 uppercase font-bold tracking-wider">總預計收入</p>
-          <p className="text-3xl font-bold mt-1">${totalRevenue.toLocaleString()}</p>
-        </div>
-        <div className="bg-gray-800 text-white p-6 rounded-2xl shadow-md">
-          <p className="text-xs opacity-80 uppercase font-bold tracking-wider">總預計支出</p>
-          <p className="text-3xl font-bold mt-1">${totalExpense.toLocaleString()}</p>
-        </div>
-        <div className={`p-6 rounded-2xl shadow-md text-white ${profit >= 0 ? 'bg-green-500' : 'bg-red-500'}`}>
-          <p className="text-xs opacity-80 uppercase font-bold tracking-wider">預計淨利潤</p>
-          <p className="text-3xl font-bold mt-1">${profit.toLocaleString()}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
